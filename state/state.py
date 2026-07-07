@@ -281,10 +281,23 @@ def check_feature_access(feature: str) -> bool:
 
 def is_route_allowed(route: str) -> bool:
     """Checks if the current user has access to a specific route to determine if it should be displayed."""
-    if not route or route in ["/home", "/about", "/config"]:
+    if not route:
+        return True
+        
+    # Normalize route to always start with a slash and use hyphens instead of underscores for matching
+    normalized_route = route if route.startswith("/") else f"/{route}"
+    normalized_route = normalized_route.replace("_", "-")
+    
+    # Also handle some specific page_name mappings
+    if normalized_route == "/admin-panel":
+        normalized_route = "/admin"
+    if normalized_route == "/test-pixie-compositor":
+        normalized_route = "/pixie-compositor"
+        
+    if normalized_route in ["/home", "/about", "/config", "/library"]:
         return True
     
-    if route == "/admin":
+    if normalized_route == "/admin":
         app_state = me.state(AppState)
         import os
         expected = os.environ.get("SUPER_ADMIN_EMAIL", "").strip()
@@ -299,19 +312,22 @@ def is_route_allowed(route: str) -> bool:
         "/vto": "vto",
         "/labs": "games",
         "/nano-banana": "image",
-        "/edit_images": "image",
-        "/interior_design": "image",
+        "/edit-images": "image",
+        "/interior-design": "image",
         "/starter-pack": "image",
-        "/character_consistency": "image",
-        "/shop_the_look": "image",
-        "/pixie_compositor": "image",
+        "/character-consistency": "image",
+        "/shop-the-look": "image",
+        "/pixie-compositor": "image",
         "/imagen": "image",
+        "/gemini-image-generation": "image",
+        "/banana-studio": "image",
+        "/imagen-upscale": "image",
         "/object-rotation": "video",
-        "/motion_portraits": "video",
+        "/motion-portraits": "video",
         "/veo": "video",
     }
     
-    feature = route_features.get(route)
+    feature = route_features.get(normalized_route)
     if feature:
         return check_feature_access(feature)
         
@@ -324,11 +340,23 @@ def check_quota(feature: str, amount: int = 1) -> bool:
     amount: the number of items they are trying to generate
     Returns True if allowed, False if quota exceeded.
     """
+    # 1. Zero-Trust Enforcement: First verify they actually have the feature flag and are not expired
+    if not check_feature_access(feature):
+        return False
+
     app_state = me.state(AppState)
     
+    # 2. Hard block for users that aren't actually in the database.
+    # If allowed_features is empty, they shouldn't pass the check above, but as a secondary defense:
+    from services.access_service import get_user_access
+    access_data = get_user_access(app_state.user_email)
+    
+    if not access_data:
+        return False # Ghost users or unconfigured users get immediately rejected
+        
     quota = getattr(app_state, f"{feature}_quota", 0)
     
-    # -1 means completely restricted (Zero Trust)
+    # -1 means completely restricted (Zero Trust overrides)
     if quota == -1:
         return False
         
@@ -337,8 +365,6 @@ def check_quota(feature: str, amount: int = 1) -> bool:
         return True
         
     # Fetch real-time usage from Firestore to prevent stale session bypass
-    from services.access_service import get_user_access
-    access_data = get_user_access(app_state.user_email)
     usage = 0
     if access_data:
         usage = access_data.get(f"{feature}_usage", 0)

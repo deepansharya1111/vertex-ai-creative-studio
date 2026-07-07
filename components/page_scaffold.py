@@ -62,7 +62,27 @@ def page_scaffold(page_name: str):
                 margin=me.Margin(bottom=20),
             )
         ):
-            me.slot()
+            from state.state import is_route_allowed
+            if is_route_allowed(me.state(AppState).current_page):
+                me.slot()
+            else:
+                with me.box(
+                    style=me.Style(
+                        display="flex",
+                        flex_direction="column",
+                        align_items="center",
+                        justify_content="center",
+                        height="100%",
+                        padding=me.Padding.all(40),
+                        gap=16
+                    )
+                ):
+                    me.icon("lock", style=me.Style(font_size="48px", color=me.theme_var("error")))
+                    me.text("Access Denied", type="headline-4", style=me.Style(color=me.theme_var("on-background")))
+                    me.text(
+                        "You do not have permission to view this feature or your access has expired. Please contact an administrator.",
+                        style=me.Style(color=me.theme_var("on-surface-variant"), text_align="center")
+                    )
 
 
 @me.content_component
